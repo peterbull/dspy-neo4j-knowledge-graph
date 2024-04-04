@@ -5,20 +5,34 @@ Text -> Knowledge Graph
 Constraints:
 - Use the existing schema before creating new nodes and relationships.
 """
+
 import os
+
 from dotenv import find_dotenv, load_dotenv
-load_dotenv(find_dotenv());
+
+load_dotenv(find_dotenv())
+from dsp import Claude
+
 import dspy
 from src.neo4j import Neo4j
 
-# set up Neo4j using NEO4J_URI
-neo4j = Neo4j(uri=os.getenv("NEO4J_URI"), user=os.getenv("NEO4J_USER"), password=os.getenv("NEO4J_PASSWORD"))
+claude = Claude(model="claude-3-haiku-20240307", api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-lm = dspy.OpenAI(
-    model="gpt-4",
-    max_tokens=1024,
+dspy.configure(lm=claude)
+
+# set up Neo4j using NEO4J_URI
+neo4j = Neo4j(
+    uri=os.getenv("NEO4J_URI"), user=os.getenv("NEO4J_USER"), password=os.getenv("NEO4J_PASSWORD")
 )
-dspy.configure(lm=lm)
+
+# lm = dspy.OpenAI(
+#     model="gpt-4",
+#     max_tokens=1024,
+# )
+# lm = dspy.OllamaLocal("open-hermes-2-4_0", max_tokens=3000, model_type="chat")
+
+# dspy.configure(lm=lm)
+
 
 class CypherFromText(dspy.Signature):
     """Instructions:
@@ -27,15 +41,20 @@ class CypherFromText(dspy.Signature):
     - Use generic categories for node and relationship labels."""
 
     text = dspy.InputField(desc="Text to model using nodes, properties and relationships.")
-    neo4j_schema = dspy.InputField(desc="Current graph schema in Neo4j as a list of NODES and RELATIONSHIPS.")
-    statement = dspy.OutputField(desc="Cypher statement to merge nodes and relationships found in the text.")
+    neo4j_schema = dspy.InputField(
+        desc="Current graph schema in Neo4j as a list of NODES and RELATIONSHIPS."
+    )
+    statement = dspy.OutputField(
+        desc="Cypher statement to merge nodes and relationships found in the text. IMPORTANT!! ONLY OUTPUT THE RAW CYPHER QUERY!!"
+    )
+
 
 generate_cypher = dspy.ChainOfThought(CypherFromText)
 
 if __name__ == "__main__":
     from pathlib import Path
-    # import json
 
+    # import json
     # examples_path = Path(__file__).parent / "examples" / "wikipedia-abstracts-v0_0_1.ndjson"
     # with open(examples_path, "r") as f:
     #     # process line by line
@@ -50,12 +69,12 @@ if __name__ == "__main__":
         try:
             text = input("\nEnter text: ")
             cypher = generate_cypher(text=text.replace("\n", " "), neo4j_schema=neo4j.fmt_schema())
-            neo4j.query(cypher.statement.replace('```', ''))
+            neo4j.query(cypher.statement.replace("```", ""))
 
         except Exception as e:
             print(e)
             print("Please input one paragraph at a time.")
             continue
-        
+
         except KeyboardInterrupt:
             break
